@@ -1,0 +1,142 @@
+---
+title: "Practical Machine Learning Project"
+author: "İlker Zeybek"
+date: "September 18, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+Using devices such as **Jawbone Up**, **Nike FuelBand**, and **Fitbit** it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website [here](http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har). (see the section on the Weight Lifting Exercise Dataset).
+
+The goal of this project is to predict the manner in which they did the exercise. This is the **classe** variable in the training set.
+
+## Data Processing
+
+Firstly, we have to load necessary packages and set the seed for reproducibility.
+
+```{r}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+library(corrplot)
+set.seed(12345)
+```
+
+Then we need to load train and test data into R. In this project, testing data is the final 20 cases for evaluating the project outcome.
+
+```{r}
+training <- read.csv("pml-training.csv")
+testing  <- read.csv("pml-testing.csv")
+```
+
+After loading the data, we will create actual training and testing data that we use and evaluate our models.
+
+```{r}
+inTrain  <- createDataPartition(training$classe, p=0.7, list=FALSE)
+TrainSet <- training[inTrain, ]
+TestSet  <- training[-inTrain, ]
+dim(TrainSet)
+dim(TestSet)
+```
+
+We have to clear our data in order to create efficient classification models. Firstly, we will remove features with **Nearly Zero Variance** with **nearZeroVar()** function.
+
+```{r}
+NZV <- nearZeroVar(TrainSet)
+TrainSet <- TrainSet[, -NZV]
+TestSet  <- TestSet[, -NZV]
+dim(TrainSet)
+dim(TestSet)
+```
+
+After that, we will remove the features with consists mostly NA values. 95% is selected for threshold.
+
+```{r}
+AllNA    <- sapply(TrainSet, function(x) mean(is.na(x))) > 0.95
+TrainSet <- TrainSet[, AllNA == F]
+TestSet  <- TestSet[, AllNA == F]
+dim(TrainSet)
+dim(TestSet)
+```
+
+Then we have to remove identification features, namely the first five features.
+
+```{r}
+TrainSet <- TrainSet[, -(1:5)]
+TestSet  <- TestSet[, -(1:5)]
+dim(TrainSet)
+dim(TestSet)
+```
+
+## Exploratory Data Analysis
+
+Correlations among features are analysed before proceeding to the modeling phase of classification methods.
+
+```{r fig.align= "center"}
+corMatrix <- cor(TrainSet[, -54])
+corrplot(corMatrix, order = "FPC", method = "color", type = "lower", 
+         tl.cex = 0.8, tl.col = rgb(0, 0, 0))
+```
+
+There are relatively minimal correlations among the features. More advanced techniques could be done, but they are not necessary for this project.
+
+## Prediction Models
+
+Famous classification methods like Random Forest, Decision Tree, and Generalized Boosted Model will be applied to the data set.
+
+### Random Forest
+
+```{r}
+controlRF <- trainControl(method="cv", number=3, verboseIter=FALSE)
+modFitRandForest <- train(classe ~ ., data=TrainSet, method="rf",
+                          trControl=controlRF)
+modFitRandForest$finalModel
+predictRandForest <- predict(modFitRandForest, newdata=TestSet)
+confMatRandForest <- confusionMatrix(table(predictRandForest, TestSet$classe))
+confMatRandForest
+```
+
+### Decision Tree
+
+```{r fig.align = "center"}
+modFitDecTree <- rpart(classe ~ ., data = TrainSet, method = "class")
+fancyRpartPlot(modFitDecTree)
+predictDecTree <- predict(modFitDecTree, newdata = TestSet, 
+                          type = "class")
+confMatDecTree <- confusionMatrix(table(predictDecTree, TestSet$classe))
+confMatDecTree
+```
+
+### Generalized Boosted Model
+
+```{r}
+controlGBM <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+modFitGBM  <- train(classe ~ ., data=TrainSet, method = "gbm",
+                    trControl = controlGBM, verbose = FALSE)
+modFitGBM$finalModel
+predictGBM <- predict(modFitGBM, newdata=TestSet)
+confMatGBM <- confusionMatrix(table(predictGBM, TestSet$classe))
+confMatGBM
+```
+
+## Results
+
+The accuracy of the models proposed are:
+
+- Random Forest : 0.9992
+- Decision Tree : 0.7342
+- GBM : 0.9876
+
+Random Forest will be applied to the 20 cases given for the quiz. Results are shown below.
+
+```{r}
+predictTEST <- predict(modFitRandForest, newdata=testing)
+predictTEST
+```
